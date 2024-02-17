@@ -186,16 +186,25 @@ const messages = {
         title: {
           add: "Adicionar fila",
           edit: "Editar fila",
+          holidays: "Feriados"
         },
         form: {
           name: "Nome",
           color: "Cor",
-          greetingMessage: "Mensagem de saudação",
+          greetingMessage: "Mensagem de Saudação",
+          absenceMessage: "Mensagem de Ausência",
+        },
+        holiday: {
+          date: "Data",
+          holiday: "Nome do Feriado"
         },
         buttons: {
           okAdd: "Adicionar",
           okEdit: "Salvar",
           cancel: "Cancelar",
+          okAddHoliday: "Novo Feriado",
+          addAllHolidays: "Adicionar todos os feriados",
+          deleteAllHolidays: "Apagar todos os feriados"
         },
       },
       userModal: {
@@ -308,6 +317,7 @@ const messages = {
           name: "Nome",
           color: "Cor",
           greeting: "Mensagem de saudação",
+          absence: "Mensagem de Ausência",
           actions: "Ações",
         },
         buttons: {

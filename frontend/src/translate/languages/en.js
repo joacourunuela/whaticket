@@ -184,11 +184,17 @@ const messages = {
         title: {
           add: "Add queue",
           edit: "Edit queue",
+          holidays: "Holidays",
         },
         form: {
           name: "Name",
           color: "Color",
           greetingMessage: "Greeting Message",
+          absenceMessage: "Absence Message",
+        },
+        holiday: {
+          date: "Date",
+          holiday: "Holiday's name"
         },
         buttons: {
           okAdd: "Add",
@@ -304,7 +310,8 @@ const messages = {
         table: {
           name: "Name",
           color: "Color",
-          greeting: "Greeting message",
+          greeting: "Greeting Message",
+          absence: "Absence Message",
           actions: "Actions",
         },
         buttons: {

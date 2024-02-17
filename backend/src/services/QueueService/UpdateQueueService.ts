@@ -8,6 +8,8 @@ interface QueueData {
   name?: string;
   color?: string;
   greetingMessage?: string;
+  absenceMessage?: string;
+  holidays?: string;
 }
 
 const UpdateQueueService = async (

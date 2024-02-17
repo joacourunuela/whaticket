@@ -201,10 +201,9 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
-const MessageInput = ({ ticketStatus }) => {
+const MessageInput = ({ ticketStatus, ticket }) => {
   const classes = useStyles();
   const { ticketId } = useParams();
-
   const [medias, setMedias] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
@@ -226,6 +225,7 @@ const MessageInput = ({ ticketStatus }) => {
 
   useEffect(() => {
     inputRef.current.focus();
+
     return () => {
       setInputMessage("");
       setShowEmoji(false);
@@ -234,13 +234,44 @@ const MessageInput = ({ ticketStatus }) => {
     };
   }, [ticketId, setReplyingMessage]);
 
+  /*   useEffect(() => {
+      inputRef.current.focus();
+      //Verificando se data da ultima mensagem recebida = data do feriado e dispara envio da mensagem de ausência
+      if (ticket && ticket.queue) {
+        const currentQueueHolidays = JSON.parse(ticket.queue.holidays);
+        const date = new Date(ticket.updatedAt);
+  
+        const lastUpdate = `${date.getDate()}/${date.getMonth() + 1}`;
+        const isHoliday = currentQueueHolidays.find(({ date }) => date === lastUpdate);
+        if (!isHoliday || isHoliday === undefined) {
+          setHolidayMessage("");
+        }
+  
+        setHolidayMessage(ticket.queue.greetingMessage);
+        setInputMessage(holidayMessage);
+        handleOutOfOffice(holidayMessage);
+      }
+    }, [ticket]);
+  
+    const handleOutOfOffice = (holidayMessage) => {
+      handleSendMessage();
+      setInputMessage("");
+      setShowEmoji(false);
+      setLoading(false);
+      setReplyingMessage(null);
+    } */
+
   const handleChangeInput = (e) => {
-    setInputMessage(e.target.value);
-    handleLoadQuickAnswer(e.target.value);
+    if (typeof inputMessage === 'string') {
+      setInputMessage(e.target.value);
+      handleLoadQuickAnswer(e.target.value);
+    }
   };
 
   const handleQuickAnswersClick = (value) => {
-    setInputMessage(value);
+    const quickAnswer = value.split('/:/');
+
+    setInputMessage(quickAnswer);
     setTypeBar(false);
   };
 
@@ -286,29 +317,54 @@ const MessageInput = ({ ticketStatus }) => {
   };
 
   const handleSendMessage = async () => {
-    if (inputMessage.trim() === "") return;
+    if (String(inputMessage).trim() === "") return;
     setLoading(true);
-
-    const message = {
-      read: 1,
-      fromMe: true,
-      mediaUrl: "",
-      body: signMessage
-        ? `*${user?.name}:*\n${inputMessage.trim()}`
-        : inputMessage.trim(),
-      quotedMsg: replyingMessage,
-    };
-    try {
-      await api.post(`/messages/${ticketId}`, message);
-    } catch (err) {
-      toastError(err);
+    if (typeof inputMessage !== 'string') {
+      const arrayQuickMessages = Object.values(inputMessage);
+      const limit = inputMessage.length;
+      for (let i = 0; i < limit; i += 1) {
+        setTimeout(async () => {
+          const message = {
+            read: 1,
+            fromMe: true,
+            mediaUrl: "",
+            body: signMessage
+              ? `*${user?.name}:*\n${arrayQuickMessages[i].trim()}`
+              : inputMessage.trim(),
+            quotedMsg: replyingMessage,
+          }
+          try {
+            await api.post(`/messages/${ticketId}`, message);
+          } catch (err) {
+            toastError(err);
+          }
+          setInputMessage("");
+          setShowEmoji(false);
+          setLoading(false);
+          setReplyingMessage(null);
+        }, 1500 * i); //1,5seg * i
+      }
+    } else {
+      const message = {
+        read: 1,
+        fromMe: true,
+        mediaUrl: "",
+        body: signMessage
+          ? `*${user?.name}:*\n${inputMessage.trim()}`
+          : inputMessage.trim(),
+        quotedMsg: replyingMessage,
+      }
+      try {
+        await api.post(`/messages/${ticketId}`, message);
+      } catch (err) {
+        toastError(err);
+      }
+      setInputMessage("");
+      setShowEmoji(false);
+      setLoading(false);
+      setReplyingMessage(null);
     }
-
-    setInputMessage("");
-    setShowEmoji(false);
-    setLoading(false);
-    setReplyingMessage(null);
-  };
+  }
 
   const handleStartRecording = async () => {
     setLoading(true);
@@ -329,7 +385,9 @@ const MessageInput = ({ ticketStatus }) => {
         const { data } = await api.get("/quickAnswers/", {
           params: { searchParam: inputMessage.substring(1) },
         });
+
         setQuickAnswer(data.quickAnswers);
+        console.log(quickAnswers);
         if (data.quickAnswers.length > 0) {
           setTypeBar(true);
         } else {
@@ -434,7 +492,7 @@ const MessageInput = ({ ticketStatus }) => {
           <span>
             {medias[0]?.name}
             {/* <img src={media.preview} alt=""></img> */}
-          </span>
+          </span >
         )}
         <IconButton
           aria-label="send-upload"
@@ -444,7 +502,7 @@ const MessageInput = ({ ticketStatus }) => {
         >
           <SendIcon className={classes.sendMessageIcons} />
         </IconButton>
-      </Paper>
+      </Paper >
     );
   else {
     return (
@@ -585,7 +643,7 @@ const MessageInput = ({ ticketStatus }) => {
               }
               multiline
               maxRows={5}
-              value={inputMessage}
+              value={typeof inputMessage !== 'string' ? Object.values(inputMessage).join('\n') : inputMessage}
               onChange={handleChangeInput}
               disabled={recording || loading || ticketStatus !== "open"}
               onPaste={(e) => {
@@ -608,7 +666,7 @@ const MessageInput = ({ ticketStatus }) => {
                     >
                       {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
                       <a onClick={() => handleQuickAnswersClick(value.message)}>
-                        {`${value.shortcut} - ${value.message}`}
+                        {`${value.shortcut} - ${value.message.split('/:/').join(' | ')} `}
                       </a>
                     </li>
                   );

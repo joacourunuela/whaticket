@@ -12,6 +12,7 @@ import {
 
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
+import Queue from "../../models/Queue";
 import Message from "../../models/Message";
 
 import { getIO } from "../../libs/socket";
@@ -29,7 +30,6 @@ import formatBody from "../../helpers/Mustache";
 interface Session extends Client {
   id?: number;
 }
-
 const writeFileAsync = promisify(writeFile);
 
 const verifyContact = async (msgContact: WbotContact): Promise<Contact> => {
@@ -63,18 +63,18 @@ const verifyQuotedMessage = async (
   return quotedMsg;
 };
 
-
 // generate random id string for file names, function got from: https://stackoverflow.com/a/1349426/1851801
 function makeRandomId(length: number) {
-    let result = '';
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const charactersLength = characters.length;
-    let counter = 0;
-    while (counter < length) {
-      result += characters.charAt(Math.floor(Math.random() * charactersLength));
-      counter += 1;
-    }
-    return result;
+  let result = "";
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const charactersLength = characters.length;
+  let counter = 0;
+  while (counter < length) {
+    result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    counter += 1;
+  }
+  return result;
 }
 
 const verifyMediaMessage = async (
@@ -90,13 +90,16 @@ const verifyMediaMessage = async (
     throw new Error("ERR_WAPP_DOWNLOAD_MEDIA");
   }
 
-  let randomId = makeRandomId(5);
+  const randomId = makeRandomId(5);
 
   if (!media.filename) {
     const ext = media.mimetype.split("/")[1].split(";")[0];
     media.filename = `${randomId}-${new Date().getTime()}.${ext}`;
   } else {
-    media.filename = media.filename.split('.').slice(0,-1).join('.')+'.'+randomId+'.'+media.filename.split('.').slice(-1);
+    media.filename = `${media.filename
+      .split(".")
+      .slice(0, -1)
+      .join(".")}.${randomId}.${media.filename.split(".").slice(-1)}`;
   }
 
   try {
@@ -133,9 +136,7 @@ const verifyMessage = async (
   ticket: Ticket,
   contact: Contact
 ) => {
-
-  if (msg.type === 'location')
-    msg = prepareLocation(msg);
+  if (msg.type === "location") msg = prepareLocation(msg);
 
   const quotedMsg = await verifyQuotedMessage(msg);
   const messageData = {
@@ -149,19 +150,50 @@ const verifyMessage = async (
     quotedMsgId: quotedMsg?.id
   };
 
-  await ticket.update({ lastMessage: msg.type === "location" ? msg.location.description ? "Localization - " + msg.location.description.split('\\n')[0] : "Localization" : msg.body });
+  await ticket.update({
+    lastMessage:
+      msg.type === "location"
+        ? msg.location.description
+          ? `Localization - ${msg.location.description.split("\\n")[0]}`
+          : "Localization"
+        : msg.body
+  });
 
   await CreateMessageService({ messageData });
 };
 
 const prepareLocation = (msg: WbotMessage): WbotMessage => {
-  let gmapsUrl = "https://maps.google.com/maps?q=" + msg.location.latitude + "%2C" + msg.location.longitude + "&z=17&hl=pt-BR";
+  const gmapsUrl = `https://maps.google.com/maps?q=${msg.location.latitude}%2C${msg.location.longitude}&z=17&hl=pt-BR`;
 
-  msg.body = "data:image/png;base64," + msg.body + "|" + gmapsUrl;
+  msg.body = `data:image/png;base64,${msg.body}|${gmapsUrl}`;
 
-  msg.body += "|" + (msg.location.description ? msg.location.description : (msg.location.latitude + ", " + msg.location.longitude))
+  msg.body += `|${msg.location.description
+    ? msg.location.description
+    : `${msg.location.latitude}, ${msg.location.longitude}`
+    }`;
 
   return msg;
+};
+
+const isHoliday = async (ticket: Ticket, currentQueue: Queue) => {
+  const holidays = JSON.parse(currentQueue.holidays);
+
+  const messagesList = await Message.findAll({
+    where: { ticketId: ticket.id }
+  });
+  const targetMessage = messagesList[messagesList.length - 1];
+
+  const dataNumber = targetMessage.updatedAt.getDate();
+  const dataMonth = targetMessage.updatedAt.getMonth();
+
+  const lastUpdate = `${dataNumber < 10
+    ? `0${dataNumber}`
+    : `${dataNumber}`}/${dataMonth + 1 < 10
+      ? `0${dataMonth + 1}`
+      : `${dataMonth + 1}`}`;
+
+  const sendAbsenceMesage = holidays.find(({ date }) => date === lastUpdate);
+  return sendAbsenceMesage;
 };
 
 const verifyQueue = async (
@@ -171,54 +203,65 @@ const verifyQueue = async (
   contact: Contact
 ) => {
   const { queues, greetingMessage } = await ShowWhatsAppService(wbot.id!);
-
   if (queues.length === 1) {
     await UpdateTicketService({
       ticketData: { queueId: queues[0].id },
       ticketId: ticket.id
     });
-
-    return;
   }
 
   const selectedOption = msg.body;
 
   const choosenQueue = queues[+selectedOption - 1];
 
+  let body = "";
+
+  // Escolha do setor pelo cliente não adicionado ainda
   if (choosenQueue) {
     await UpdateTicketService({
       ticketData: { queueId: choosenQueue.id },
       ticketId: ticket.id
     });
 
-    const body = formatBody(`\u200e${choosenQueue.greetingMessage}`, contact);
+    if ((await isHoliday(ticket, choosenQueue)) !== undefined) {
+      body = formatBody(`\u200e${choosenQueue.absenceMessage}`, contact);
+      const sentMessage = await wbot.sendMessage(
+        `${contact.number}@c.us`,
+        body
+      );
 
+      await verifyMessage(sentMessage, ticket, contact);
+      return;
+    }
+
+    body = formatBody(`\u200e${choosenQueue.greetingMessage}`, contact);
     const sentMessage = await wbot.sendMessage(`${contact.number}@c.us`, body);
 
     await verifyMessage(sentMessage, ticket, contact);
-  } else {
-    let options = "";
-
-    queues.forEach((queue, index) => {
-      options += `*${index + 1}* - ${queue.name}\n`;
-    });
-
-    const body = formatBody(`\u200e${greetingMessage}\n${options}`, contact);
-
-    const debouncedSentMessage = debounce(
-      async () => {
-        const sentMessage = await wbot.sendMessage(
-          `${contact.number}@c.us`,
-          body
-        );
-        verifyMessage(sentMessage, ticket, contact);
-      },
-      3000,
-      ticket.id
-    );
-
-    debouncedSentMessage();
+    return;
   }
+
+  let options = "";
+
+  queues.forEach((queue, index) => {
+    options += `*${index + 1}* - ${queue.name}\n`;
+  });
+
+  body = formatBody(`\u200e${greetingMessage}\n${options}`, contact);
+
+  const debouncedSentMessage = debounce(
+    async () => {
+      const sentMessage = await wbot.sendMessage(
+        `${contact.number}@c.us`,
+        body
+      );
+      verifyMessage(sentMessage, ticket, contact);
+    },
+    3000,
+    ticket.id
+  );
+
+  debouncedSentMessage();
 };
 
 const isValidMsg = (msg: WbotMessage): boolean => {
@@ -231,7 +274,7 @@ const isValidMsg = (msg: WbotMessage): boolean => {
     msg.type === "image" ||
     msg.type === "document" ||
     msg.type === "vcard" ||
-    //msg.type === "multi_vcard" ||
+    // msg.type === "multi_vcard" ||
     msg.type === "sticker" ||
     msg.type === "location"
   )
@@ -259,9 +302,14 @@ const handleMessage = async (
       // media messages sent from me from cell phone, first comes with "hasMedia = false" and type = "image/ptt/etc"
       // in this case, return and let this message be handled by "media_uploaded" event, when it will have "hasMedia = true"
 
-      if (!msg.hasMedia && msg.type !== "location" && msg.type !== "chat" && msg.type !== "vcard"
-        //&& msg.type !== "multi_vcard"
-      ) return;
+      if (
+        !msg.hasMedia &&
+        msg.type !== "location" &&
+        msg.type !== "chat" &&
+        msg.type !== "vcard"
+        // && msg.type !== "multi_vcard"
+      )
+        return;
 
       msgContact = await wbot.getContactById(msg.to);
     } else {
@@ -306,7 +354,6 @@ const handleMessage = async (
     } else {
       await verifyMessage(msg, ticket, contact);
     }
-
     if (
       !ticket.queue &&
       !chat.isGroup &&
@@ -315,6 +362,16 @@ const handleMessage = async (
       whatsapp.queues.length >= 1
     ) {
       await verifyQueue(wbot, msg, ticket, contact);
+    }
+
+    if (await isHoliday(ticket, ticket.queue)) {
+      const body = formatBody(`\u200e${ticket.queue.absenceMessage}`, contact);
+      const sentMessage = await wbot.sendMessage(
+        `${contact.number}@c.us`,
+        body
+      );
+
+      await verifyMessage(sentMessage, ticket, contact);
     }
 
     if (msg.type === "vcard") {
