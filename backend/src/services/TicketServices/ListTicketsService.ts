@@ -1,12 +1,23 @@
-import { Op, fn, where, col, Filterable, Includeable } from "sequelize";
-import { startOfDay, endOfDay, parseISO } from "date-fns";
+import { endOfDay, parseISO, startOfDay } from "date-fns";
+import {
+  Filterable,
+  Includeable,
+  Op,
+  Sequelize,
+  col,
+  fn,
+  literal,
+  where
+} from "sequelize";
 
-import Ticket from "../../models/Ticket";
+import Category from "../../models/Category";
 import Contact from "../../models/Contact";
 import Message from "../../models/Message";
 import Queue from "../../models/Queue";
-import ShowUserService from "../UserServices/ShowUserService";
+import Ticket from "../../models/Ticket";
+import User from "../../models/User";
 import Whatsapp from "../../models/Whatsapp";
+import ShowUserService from "../UserServices/ShowUserService";
 
 interface Request {
   searchParam?: string;
@@ -16,7 +27,10 @@ interface Request {
   showAll?: string;
   userId: string;
   withUnreadMessages?: string;
-  queueIds: number[];
+  whatsappIds: Array<number>;
+  queueIds: Array<number>;
+  typeIds: Array<string>;
+  showOnlyMyGroups: boolean;
 }
 
 interface Response {
@@ -28,16 +42,51 @@ interface Response {
 const ListTicketsService = async ({
   searchParam = "",
   pageNumber = "1",
+  whatsappIds,
   queueIds,
+  typeIds,
   status,
   date,
   showAll,
   userId,
-  withUnreadMessages
+  withUnreadMessages,
+  showOnlyMyGroups
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] = {
-    [Op.or]: [{ userId }, { status: "pending" }],
-    queueId: { [Op.or]: [queueIds, null] }
+    [Op.or]: [
+      { userId },
+      {
+        id: {
+          [Op.in]: Sequelize.literal(
+            `(
+          SELECT \`ticketId\` FROM \`TicketHelpUsers\` WHERE \`userId\` = ${userId}
+        )`
+          )
+        }
+      },
+      { status: "pending" }
+    ],
+    ...(typeIds?.length && {
+      isGroup: {
+        [Op.or]: typeIds?.map(typeId => (typeId === "group" ? true : false))
+      }
+    }),
+    // si no estoy viendo la tab de mis chats, entonces aplico filtros de queues y whatsapp
+    ...(!(typeIds.length === 1 && typeIds[0] === "individual") && {
+      ...(queueIds?.length && {
+        queueId: {
+          // @ts-ignore
+          [Op.or]: queueIds?.includes(null)
+            ? [queueIds.filter(id => id !== null), null]
+            : [queueIds]
+        }
+      }),
+      ...(whatsappIds?.length && {
+        whatsappId: {
+          [Op.or]: [whatsappIds]
+        }
+      })
+    })
   };
   let includeCondition: Includeable[];
 
@@ -45,7 +94,8 @@ const ListTicketsService = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "profilePicUrl"]
+      attributes: ["id", "name", "number", "domain", "profilePicUrl"],
+      ...(searchParam && { required: true })
     },
     {
       model: Queue,
@@ -56,11 +106,104 @@ const ListTicketsService = async ({
       model: Whatsapp,
       as: "whatsapp",
       attributes: ["name"]
+    },
+    {
+      model: Category,
+      as: "categories",
+      attributes: ["id", "name", "color"]
+    },
+    {
+      model: User,
+      as: "user",
+      attributes: ["id", "name"]
+    },
+    {
+      model: User,
+      as: "helpUsers",
+      required: false
+    },
+    {
+      model: User,
+      as: "participantUsers",
+      ...(showOnlyMyGroups && typeIds.length === 1 && typeIds.includes("group")
+        ? {
+            where: {
+              id: +userId
+            },
+            required: true
+          }
+        : { required: false })
+    },
+    {
+      model: Message,
+      as: "messages",
+      order: [["timestamp", "DESC"]],
+      required: false,
+      limit: 25,
+      separate: true,
+      include: [
+        {
+          model: Contact,
+          as: "contact",
+          required: false
+        }
+      ],
+      where: {
+        isPrivate: {
+          [Op.or]: [false, null]
+        }
+      }
+    },
+    {
+      model: Message,
+      as: "firstClientMessageAfterLastUserMessage",
+      attributes: ["id", "body", "timestamp"],
+      order: [["timestamp", "ASC"]],
+      required: false,
+      limit: 1,
+      where: {
+        isPrivate: {
+          [Op.or]: [false, null]
+        },
+        fromMe: false,
+        timestamp: {
+          [Op.gt]: literal(
+            `(SELECT MAX(mes.timestamp) FROM Messages mes WHERE mes.ticketId = Message.ticketId AND mes.fromMe = 1 AND (mes.isPrivate = 0 OR mes.isPrivate IS NULL))`
+          )
+        }
+      }
     }
   ];
 
   if (showAll === "true") {
-    whereCondition = { queueId: { [Op.or]: [queueIds, null] } };
+    whereCondition = {
+      ...(typeIds?.length && {
+        isGroup: {
+          [Op.or]: typeIds?.map(typeId => (typeId === "group" ? true : false))
+        }
+      }),
+
+      // si no estoy viendo la tab de mis grupos, entonces aplico filtros de queues y whatsapp
+      ...(!(
+        typeIds.length === 1 &&
+        typeIds[0] === "group" &&
+        showOnlyMyGroups
+      ) && {
+        ...(queueIds?.length && {
+          queueId: {
+            // @ts-ignore
+            [Op.or]: queueIds?.includes(null)
+              ? [queueIds.filter(id => id !== null), null]
+              : [queueIds]
+          }
+        }),
+        ...(whatsappIds?.length && {
+          whatsappId: {
+            [Op.or]: [whatsappIds]
+          }
+        })
+      })
+    };
   }
 
   if (status) {
@@ -74,21 +217,21 @@ const ListTicketsService = async ({
     const sanitizedSearchParam = searchParam.toLocaleLowerCase().trim();
 
     includeCondition = [
-      ...includeCondition,
-      {
-        model: Message,
-        as: "messages",
-        attributes: ["id", "body"],
-        where: {
-          body: where(
-            fn("LOWER", col("body")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
-          )
-        },
-        required: false,
-        duplicating: false
-      }
+      ...includeCondition
+      // {
+      //   model: Message,
+      //   as: "messages",
+      //   attributes: ["id", "body"],
+      //   where: {
+      //     body: where(
+      //       fn("LOWER", col("body")),
+      //       "LIKE",
+      //       `%${sanitizedSearchParam}%`
+      //     )
+      //   },
+      //   required: false,
+      //   duplicating: false
+      // }
     ];
 
     whereCondition = {
@@ -101,14 +244,14 @@ const ListTicketsService = async ({
             `%${sanitizedSearchParam}%`
           )
         },
-        { "$contact.number$": { [Op.like]: `%${sanitizedSearchParam}%` } },
-        {
-          "$message.body$": where(
-            fn("LOWER", col("body")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
-          )
-        }
+        { "$contact.number$": { [Op.like]: `%${sanitizedSearchParam}%` } }
+        // {
+        //   "$message.body$": where(
+        //     fn("LOWER", col("body")),
+        //     "LIKE",
+        //     `%${sanitizedSearchParam}%`
+        //   )
+        // }
       ]
     };
   }
@@ -127,7 +270,24 @@ const ListTicketsService = async ({
 
     whereCondition = {
       [Op.or]: [{ userId }, { status: "pending" }],
-      queueId: { [Op.or]: [userQueueIds, null] },
+      ...(typeIds?.length && {
+        isGroup: {
+          [Op.or]: typeIds?.map(typeId => (typeId === "group" ? true : false))
+        }
+      }),
+      ...(queueIds?.length && {
+        queueId: {
+          // @ts-ignore
+          [Op.or]: queueIds?.includes(null)
+            ? [queueIds.filter(id => id !== null), null]
+            : [queueIds]
+        }
+      }),
+      ...(whatsappIds?.length && {
+        whatsappId: {
+          [Op.or]: [whatsappIds]
+        }
+      }),
       unreadMessages: { [Op.gt]: 0 }
     };
   }
@@ -135,19 +295,64 @@ const ListTicketsService = async ({
   const limit = 40;
   const offset = limit * (+pageNumber - 1);
 
+  console.log("________-whereCondition", whereCondition);
+
+  // console.log(
+  //   typeIds,
+  //   "Ticket.findAndCountAll where shoGroups",
+  //   // @ts-ignore
+  //   whereCondition?.isGroup
+  // );
+  // // @ts-ignore
+  // console.log("Ticket.findAndCountAll where queId", whereCondition?.queueId);
+  // console.log(
+  //   "Ticket.findAndCountAll where whatsappId",
+  //   // @ts-ignore
+  //   whereCondition?.whatsappId
+  // );
+
   const { count, rows: tickets } = await Ticket.findAndCountAll({
     where: whereCondition,
     include: includeCondition,
     distinct: true,
     limit,
     offset,
-    order: [["updatedAt", "DESC"]]
+    order: [["lastMessageTimestamp", "DESC"]]
   });
+
+  let filteredTickets: Ticket[] | null = null;
+
+  // @ts-ignore
+  if (whereCondition.status === "closed") {
+    console.log("______SE PIDIERON SOLO LOS TICKETS CERRADOS");
+
+    filteredTickets = (
+      await Promise.all(
+        tickets.map(async ticket => {
+          const similiarTicketsButOpensOrPendings = await Ticket.findAll({
+            where: {
+              whatsappId: ticket.whatsappId,
+              contactId: ticket.contactId,
+              status: ["pending", "open"]
+            }
+          });
+
+          return similiarTicketsButOpensOrPendings.length === 0 ? ticket : null;
+        })
+      )
+    ).filter(ticket => ticket !== null) as Ticket[];
+  }
 
   const hasMore = count > offset + tickets.length;
 
+  const ticketsToReturn = filteredTickets || tickets;
+
+  ticketsToReturn.forEach(ticket => {
+    ticket.messages?.sort((a, b) => a.timestamp - b.timestamp);
+  });
+
   return {
-    tickets,
+    tickets: ticketsToReturn,
     count,
     hasMore
   };

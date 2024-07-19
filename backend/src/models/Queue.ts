@@ -1,18 +1,23 @@
 import {
-  Table,
+  AllowNull,
+  AutoIncrement,
+  BelongsToMany,
   Column,
   CreatedAt,
-  UpdatedAt,
+  Default,
+  HasMany,
   Model,
   PrimaryKey,
-  AutoIncrement,
-  AllowNull,
+  Table,
   Unique,
-  BelongsToMany
+  UpdatedAt
 } from "sequelize-typescript";
 import User from "./User";
 import UserQueue from "./UserQueue";
 
+import Category from "./Category";
+import ChatbotOption from "./ChatbotOption";
+import QueueCategory from "./QueueCategory";
 import Whatsapp from "./Whatsapp";
 import WhatsappQueue from "./WhatsappQueue";
 
@@ -42,11 +47,27 @@ class Queue extends Model<Queue> {
   @UpdatedAt
   updatedAt: Date;
 
+  @AllowNull(true)
+  @Default(false)
+  @Column
+  automaticAssignment: boolean;
+
+  @AllowNull(true)
+  @Default(false)
+  @Column
+  automaticAssignmentForOfflineUsers: boolean;
+
   @BelongsToMany(() => Whatsapp, () => WhatsappQueue)
   whatsapps: Array<Whatsapp & { WhatsappQueue: WhatsappQueue }>;
 
   @BelongsToMany(() => User, () => UserQueue)
   users: Array<User & { UserQueue: UserQueue }>;
+
+  @BelongsToMany(() => Category, () => QueueCategory)
+  categories: Category[];
+
+  @HasMany(() => ChatbotOption)
+  chatbotOptions: ChatbotOption[];
 }
 
 export default Queue;

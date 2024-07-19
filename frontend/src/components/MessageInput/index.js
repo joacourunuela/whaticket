@@ -1,25 +1,10 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
-import "emoji-mart/css/emoji-mart.css";
-import { useParams } from "react-router-dom";
-import { Picker } from "emoji-mart";
-import MicRecorder from "mic-recorder-to-mp3";
 import clsx from "clsx";
+import { Picker } from "emoji-mart";
+import "emoji-mart/css/emoji-mart.css";
+import MicRecorder from "mic-recorder-to-mp3";
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 
-import { makeStyles } from "@material-ui/core/styles";
-import Paper from "@material-ui/core/Paper";
-import InputBase from "@material-ui/core/InputBase";
-import CircularProgress from "@material-ui/core/CircularProgress";
-import { green } from "@material-ui/core/colors";
-import AttachFileIcon from "@material-ui/icons/AttachFile";
-import IconButton from "@material-ui/core/IconButton";
-import MoreVert from "@material-ui/icons/MoreVert";
-import MoodIcon from "@material-ui/icons/Mood";
-import SendIcon from "@material-ui/icons/Send";
-import CancelIcon from "@material-ui/icons/Cancel";
-import ClearIcon from "@material-ui/icons/Clear";
-import MicIcon from "@material-ui/icons/Mic";
-import CheckCircleOutlineIcon from "@material-ui/icons/CheckCircleOutline";
-import HighlightOffIcon from "@material-ui/icons/HighlightOff";
 import {
   FormControlLabel,
   Hidden,
@@ -27,15 +12,35 @@ import {
   MenuItem,
   Switch,
 } from "@material-ui/core";
+import Badge from "@material-ui/core/Badge";
+import CircularProgress from "@material-ui/core/CircularProgress";
 import ClickAwayListener from "@material-ui/core/ClickAwayListener";
+import IconButton from "@material-ui/core/IconButton";
+import InputBase from "@material-ui/core/InputBase";
+import Paper from "@material-ui/core/Paper";
+import { green } from "@material-ui/core/colors";
+import { makeStyles } from "@material-ui/core/styles";
+import AttachFileIcon from "@material-ui/icons/AttachFile";
+import CancelIcon from "@material-ui/icons/Cancel";
+import CheckCircleOutlineIcon from "@material-ui/icons/CheckCircleOutline";
+import ClearIcon from "@material-ui/icons/Clear";
+import CommentIcon from "@material-ui/icons/Comment";
+import HighlightOffIcon from "@material-ui/icons/HighlightOff";
 
-import { i18n } from "../../translate/i18n";
-import api from "../../services/api";
-import RecordingTimer from "./RecordingTimer";
-import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
+import MicIcon from "@material-ui/icons/Mic";
+import MoodIcon from "@material-ui/icons/Mood";
+import MoreVert from "@material-ui/icons/MoreVert";
+import SendIcon from "@material-ui/icons/Send";
+
+import { Avatar } from "@material-ui/core";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
+import api from "../../services/api";
+import { i18n } from "../../translate/i18n";
+import NewPrivateNoteModal from "../NewPrivateNoteModal/index.js";
+import RecordingTimer from "./RecordingTimer";
 
 const Mp3Recorder = new MicRecorder({ bitRate: 128 });
 
@@ -176,6 +181,8 @@ const useStyles = makeStyles((theme) => ({
     fontWeight: 500,
   },
   messageQuickAnswersWrapper: {
+    maxHeight: "500px",
+    overflowY: "auto",
     margin: 0,
     position: "absolute",
     bottom: "50px",
@@ -201,17 +208,21 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
-const MessageInput = ({ ticketStatus }) => {
+const MessageInput = ({ ticketStatus, ticketPrivateNote, ticketIsGroup }) => {
   const classes = useStyles();
   const { ticketId } = useParams();
 
   const [medias, setMedias] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
+  const [newPrivateNoteModalOpen, setNewPrivateNoteModalOpen] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [quickAnswers, setQuickAnswer] = useState([]);
+  const [groupParticipants, setGroupParticipants] = useState([]);
   const [typeBar, setTypeBar] = useState(false);
+  const [typeBar2, setTypeBar2] = useState(false);
+  const [mentionIndexOnString, setMentionIndexOnString] = useState(false);
   const inputRef = useRef();
   const [anchorEl, setAnchorEl] = useState(null);
   const { setReplyingMessage, replyingMessage } =
@@ -234,6 +245,18 @@ const MessageInput = ({ ticketStatus }) => {
     };
   }, [ticketId, setReplyingMessage]);
 
+  useEffect(() => {
+    if (medias.length > 0) {
+      console.log("se agrega el addEventListener para el enter");
+      document.addEventListener("keydown", handleEnterOnMedia);
+    }
+
+    return () => {
+      console.log("se remueve el addEventListener para el enter");
+      document.removeEventListener("keydown", handleEnterOnMedia);
+    };
+  }, [medias]);
+
   const handleChangeInput = (e) => {
     setInputMessage(e.target.value);
     handleLoadQuickAnswer(e.target.value);
@@ -242,6 +265,17 @@ const MessageInput = ({ ticketStatus }) => {
   const handleQuickAnswersClick = (value) => {
     setInputMessage(value);
     setTypeBar(false);
+  };
+
+  const handleMentionAUserClick = (user) => {
+    setInputMessage(
+      (oldMessage) =>
+        oldMessage.slice(0, mentionIndexOnString + 1) +
+        `${user.number}` +
+        oldMessage.slice(mentionIndexOnString + 1)
+    );
+    setMentionIndexOnString(false);
+    setTypeBar2(false);
   };
 
   const handleAddEmoji = (e) => {
@@ -258,6 +292,17 @@ const MessageInput = ({ ticketStatus }) => {
     setMedias(selectedMedias);
   };
 
+  const handleEnterOnMedia = (e) => {
+    if (e.key === "Enter") {
+      console.log("se presiono enter");
+      handleUploadMedia(e);
+    } else {
+      console.log("no se presiono enter");
+      console.log("se remueve el addEventListener para el enter");
+      document.removeEventListener("keydown", handleEnterOnMedia);
+    }
+  };
+
   const handleInputPaste = (e) => {
     if (e.clipboardData.files[0]) {
       setMedias([e.clipboardData.files[0]]);
@@ -265,6 +310,7 @@ const MessageInput = ({ ticketStatus }) => {
   };
 
   const handleUploadMedia = async (e) => {
+    console.log("handleUploadMedia medias:", medias);
     setLoading(true);
     e.preventDefault();
 
@@ -340,6 +386,26 @@ const MessageInput = ({ ticketStatus }) => {
       }
     } else {
       setTypeBar(false);
+    }
+  };
+
+  const handleLoadMention = async (value) => {
+    try {
+      console.log("haciendo la request");
+
+      const { data } = await api.get("/showParticipants/" + ticketId);
+
+      setGroupParticipants(data || []);
+
+      console.log("handleLoadMention ", data);
+
+      if (data.length > 0) {
+        setTypeBar2(true);
+      } else {
+        setTypeBar2(false);
+      }
+    } catch (err) {
+      setTypeBar2(false);
     }
   };
 
@@ -490,6 +556,28 @@ const MessageInput = ({ ticketStatus }) => {
                 <AttachFileIcon className={classes.sendMessageIcons} />
               </IconButton>
             </label>
+
+            <IconButton
+              component="span"
+              onClick={() => setNewPrivateNoteModalOpen(true)}
+            >
+              <Badge
+                invisible={ticketPrivateNote ? false : true}
+                badgeContent={"!"}
+                color="secondary"
+              >
+                <CommentIcon className={classes.sendMessageIcons} />
+              </Badge>
+            </IconButton>
+
+            <NewPrivateNoteModal
+              modalOpen={newPrivateNoteModalOpen}
+              onClose={(e) => setNewPrivateNoteModalOpen(false)}
+              ticketId={ticketId}
+              actualUserName={user?.name}
+              ticketPrivateNote={ticketPrivateNote}
+            />
+
             <FormControlLabel
               style={{ marginRight: 7, color: "gray" }}
               label={i18n.t("messagesInput.signMessage")}
@@ -595,6 +683,15 @@ const MessageInput = ({ ticketStatus }) => {
                 if (loading || e.shiftKey) return;
                 else if (e.key === "Enter") {
                   handleSendMessage();
+                } else if (e.key === "@") {
+                  if (ticketIsGroup) {
+                    setMentionIndexOnString(e.target.selectionStart);
+                    handleLoadMention();
+                  } else {
+                    setTypeBar2(false);
+                  }
+                } else {
+                  setTypeBar2(false);
                 }
               }}
             />
@@ -609,6 +706,36 @@ const MessageInput = ({ ticketStatus }) => {
                       {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
                       <a onClick={() => handleQuickAnswersClick(value.message)}>
                         {`${value.shortcut} - ${value.message}`}
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div></div>
+            )}
+            {typeBar2 ? (
+              <ul className={classes.messageQuickAnswersWrapper}>
+                {groupParticipants.map((value, index) => {
+                  return (
+                    <li
+                      className={classes.messageQuickAnswersWrapperItem}
+                      key={index}
+                    >
+                      {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
+                      <a
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          maxHeight: "unset",
+                        }}
+                        onClick={() => {
+                          handleMentionAUserClick(value);
+                        }}
+                      >
+                        <Avatar src={value.profilePicUrl} alt={value.name} />
+                        {`${value.name} - ${value.number}`}
                       </a>
                     </li>
                   );

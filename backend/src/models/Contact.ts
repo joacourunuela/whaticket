@@ -1,15 +1,15 @@
 import {
-  Table,
+  AllowNull,
+  AutoIncrement,
   Column,
   CreatedAt,
-  UpdatedAt,
+  Default,
+  HasMany,
   Model,
   PrimaryKey,
-  AutoIncrement,
-  AllowNull,
+  Table,
   Unique,
-  Default,
-  HasMany
+  UpdatedAt
 } from "sequelize-typescript";
 import ContactCustomField from "./ContactCustomField";
 import Ticket from "./Ticket";
@@ -37,9 +37,16 @@ class Contact extends Model<Contact> {
   @Column
   profilePicUrl: string;
 
+  @Column
+  domain: string;
+
   @Default(false)
   @Column
   isGroup: boolean;
+
+  @AllowNull
+  @Column
+  isCompanyMember: boolean;
 
   @CreatedAt
   createdAt: Date;

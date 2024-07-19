@@ -1,4 +1,4 @@
-FROM node:14 as build-deps
+FROM node:20 as build-deps
 
 RUN apt-get update && apt-get install -y wget
 
@@ -23,10 +23,10 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
 
 WORKDIR /usr/src/app
 COPY package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY . .
-RUN npm run build
+RUN npm run build --legacy-peer-deps
 
 ENV NODE_ENV=production
 ENV PORT=3000

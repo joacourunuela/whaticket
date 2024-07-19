@@ -1,20 +1,25 @@
 import {
-  Table,
+  AutoIncrement,
+  BelongsTo,
+  BelongsToMany,
   Column,
   CreatedAt,
-  UpdatedAt,
+  Default,
+  ForeignKey,
+  HasMany,
   Model,
   PrimaryKey,
-  ForeignKey,
-  BelongsTo,
-  HasMany,
-  AutoIncrement,
-  Default
+  Table,
+  UpdatedAt
 } from "sequelize-typescript";
 
+import Category from "./Category";
 import Contact from "./Contact";
 import Message from "./Message";
 import Queue from "./Queue";
+import TicketCategory from "./TicketCategory";
+import TicketHelpUser from "./TicketHelpUser";
+import TicketParticipantUsers from "./TicketParticipantUsers";
 import User from "./User";
 import Whatsapp from "./Whatsapp";
 
@@ -32,11 +37,23 @@ class Ticket extends Model<Ticket> {
   unreadMessages: number;
 
   @Column
+  lastMessageTimestamp: number;
+
+  @Column
   lastMessage: string;
+
+  @Column
+  privateNote: string;
 
   @Default(false)
   @Column
   isGroup: boolean;
+
+  @Column
+  userHadContact: boolean;
+
+  @Column
+  transferred: boolean;
 
   @CreatedAt
   createdAt: Date;
@@ -74,6 +91,18 @@ class Ticket extends Model<Ticket> {
 
   @HasMany(() => Message)
   messages: Message[];
+
+  @HasMany(() => Message)
+  firstClientMessageAfterLastUserMessage: Message[];
+
+  @BelongsToMany(() => Category, () => TicketCategory)
+  categories: Category[];
+
+  @BelongsToMany(() => User, () => TicketHelpUser)
+  helpUsers: User[];
+
+  @BelongsToMany(() => User, () => TicketParticipantUsers)
+  participantUsers: User[];
 }
 
 export default Ticket;

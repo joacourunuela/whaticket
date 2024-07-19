@@ -6,10 +6,11 @@ interface QueueData {
   name: string;
   color: string;
   greetingMessage?: string;
+  categoriesIds?: number[];
 }
 
 const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
-  const { color, name } = queueData;
+  const { color, name, categoriesIds } = queueData;
 
   const queueSchema = Yup.object().shape({
     name: Yup.string()
@@ -60,6 +61,10 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
   }
 
   const queue = await Queue.create(queueData);
+
+  if (categoriesIds) {
+    await queue.$set("categories", categoriesIds);
+  }
 
   return queue;
 };

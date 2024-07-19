@@ -11,6 +11,18 @@ whatsappSessionRoutes.post(
   WhatsAppSessionController.store
 );
 
+whatsappSessionRoutes.post(
+  "/whatsappsession/updateWppChatslastMessageTimestamp/:whatsappId",
+  isAuth,
+  WhatsAppSessionController.updateWppChatslastMessageTimestamp
+);
+
+whatsappSessionRoutes.post(
+  "/whatsappsession/syncGroupContactsTable/:whatsappId",
+  isAuth,
+  WhatsAppSessionController.syncGroupContactsTable
+);
+
 whatsappSessionRoutes.put(
   "/whatsappsession/:whatsappId",
   isAuth,

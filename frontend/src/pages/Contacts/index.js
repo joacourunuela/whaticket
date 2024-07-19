@@ -1,39 +1,39 @@
-import React, { useState, useEffect, useReducer, useContext } from "react";
-import openSocket from "../../services/socket-io";
-import { toast } from "react-toastify";
+import React, { useContext, useEffect, useReducer, useState } from "react";
 import { useHistory } from "react-router-dom";
+import { toast } from "react-toastify";
+import openSocket from "../../services/socket-io";
 
-import { makeStyles } from "@material-ui/core/styles";
+import Avatar from "@material-ui/core/Avatar";
+import Button from "@material-ui/core/Button";
+import InputAdornment from "@material-ui/core/InputAdornment";
+import Paper from "@material-ui/core/Paper";
 import Table from "@material-ui/core/Table";
 import TableBody from "@material-ui/core/TableBody";
 import TableCell from "@material-ui/core/TableCell";
 import TableHead from "@material-ui/core/TableHead";
 import TableRow from "@material-ui/core/TableRow";
-import Paper from "@material-ui/core/Paper";
-import Button from "@material-ui/core/Button";
-import Avatar from "@material-ui/core/Avatar";
-import WhatsAppIcon from "@material-ui/icons/WhatsApp";
-import SearchIcon from "@material-ui/icons/Search";
 import TextField from "@material-ui/core/TextField";
-import InputAdornment from "@material-ui/core/InputAdornment";
+import { makeStyles } from "@material-ui/core/styles";
+import SearchIcon from "@material-ui/icons/Search";
+import WhatsAppIcon from "@material-ui/icons/WhatsApp";
 
 import IconButton from "@material-ui/core/IconButton";
 import DeleteOutlineIcon from "@material-ui/icons/DeleteOutline";
 import EditIcon from "@material-ui/icons/Edit";
 
-import api from "../../services/api";
-import TableRowSkeleton from "../../components/TableRowSkeleton";
-import ContactModal from "../../components/ContactModal";
 import ConfirmationModal from "../../components/ConfirmationModal/";
+import ContactModal from "../../components/ContactModal";
+import TableRowSkeleton from "../../components/TableRowSkeleton";
+import api from "../../services/api";
 
-import { i18n } from "../../translate/i18n";
-import MainHeader from "../../components/MainHeader";
-import Title from "../../components/Title";
-import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
-import MainContainer from "../../components/MainContainer";
-import toastError from "../../errors/toastError";
-import { AuthContext } from "../../context/Auth/AuthContext";
 import { Can } from "../../components/Can";
+import MainContainer from "../../components/MainContainer";
+import MainHeader from "../../components/MainHeader";
+import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
+import Title from "../../components/Title";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import toastError from "../../errors/toastError";
+import { i18n } from "../../translate/i18n";
 
 const reducer = (state, action) => {
   if (action.type === "LOAD_CONTACTS") {
@@ -170,6 +170,11 @@ const Contacts = () => {
         userId: user?.id,
         status: "open",
       });
+
+      await api.post(`/privateMessages/${ticket.id}`, {
+        body: `${user?.name} *Creó* un nuevo ticket`,
+      });
+
       history.push(`/tickets/${ticket.id}`);
     } catch (err) {
       toastError(err);
@@ -309,7 +314,95 @@ const Contacts = () => {
                   <TableCell align="center">
                     <IconButton
                       size="small"
-                      onClick={() => handleSaveTicket(contact.id)}
+                      onClick={() => {
+                        console.log({ user, contact });
+
+                        // Obetenemos el whatsappId por defecto del usuario
+                        const userDefaultWppId = user.whatsappId;
+                        console.log(
+                          "Obetenemos el whatsappId por defecto del usuario",
+                          userDefaultWppId
+                        );
+
+                        // Obtenemos los tickets del contacto
+                        const contactTickets = contact.tickets;
+                        console.log(
+                          "Obtenemos los tickets del contacto",
+                          contactTickets
+                        );
+
+                        if (userDefaultWppId) {
+                          console.log("tiene whatsappId por defecto");
+
+                          // Buscamos si el contacto tiene un ticket con el mismo whatsappId del usuario
+                          const contactTicketWithSameWppId =
+                            contactTickets.find(
+                              (ticket) => ticket.whatsappId === userDefaultWppId
+                            );
+                          console.log(
+                            "Buscamos si el contacto tiene un ticket con el mismo whatsappId del usuario",
+                            contactTicketWithSameWppId
+                          );
+
+                          // Si no tiene un ticket con el mismo whatsappId del usuario o el ticket esta cerrado
+                          if (
+                            !contactTicketWithSameWppId ||
+                            contactTicketWithSameWppId?.status === "closed"
+                          ) {
+                            console.log(
+                              "Si no tiene un ticket con el mismo whatsappId del usuario o el ticket esta cerrado"
+                            );
+                            // creamos un ticket nuevo
+
+                            toast.info(
+                              "Crearemos un ticket nuevo con tu conexión asignada"
+                            );
+                            handleSaveTicket(contact.id);
+                            console.log("creamos un ticket nuevo", contact.id);
+                            return;
+                          }
+
+                          // lo mandamos al ticket encontrado
+                          console.log(
+                            "lo mandamos al ticket encontrado",
+                            contactTicketWithSameWppId.id
+                          );
+                          toast.info(
+                            "Ya existe un ticket para tu conexión asignada"
+                          );
+                          history.push(
+                            `/tickets/${contactTicketWithSameWppId.id}`
+                          );
+                        } else {
+                          if (contactTickets.length > 0) {
+                            console.log(
+                              "no tiene whatsappId por defecto, pero contacto tiene tickets"
+                            );
+                            const contactTicketAsignadoAlUsuario =
+                              contactTickets.find(
+                                (ticket) => ticket.userId === user.id
+                              );
+
+                            if (contactTicketAsignadoAlUsuario) {
+                              console.log(
+                                "en el contacto hay un ticket asignado al usuario, lo mandamos a ese ticket"
+                              );
+
+                              toast.info("Ya existe un ticket asignado a ti");
+                              history.push(`/tickets/${contactTickets[0].id}`);
+                            }
+                          } else {
+                            // Creamos un ticket nuevo
+                            console.log(
+                              "no tiene whatsappId por defecto y el contacto tmp tinene ningun ticket, Creamos un ticket nuevo"
+                            );
+                            toast.info(
+                              "No tienes conexión asignada, crearemos un ticket nuevo para ti con la conexión por defecto"
+                            );
+                            handleSaveTicket(contact.id);
+                          }
+                        }
+                      }}
                     >
                       <WhatsAppIcon />
                     </IconButton>

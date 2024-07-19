@@ -1,29 +1,32 @@
-import React, { useState, useContext, useEffect } from "react";
 import clsx from "clsx";
+import React, { useContext, useEffect, useState } from "react";
 
 import {
-  makeStyles,
-  Drawer,
   AppBar,
-  Toolbar,
-  List,
-  Typography,
   Divider,
-  MenuItem,
+  Drawer,
   IconButton,
+  List,
   Menu,
+  MenuItem,
+  Toolbar,
+  Typography,
+  makeStyles,
 } from "@material-ui/core";
+import openSocket from "../services/socket-io";
 
-import MenuIcon from "@material-ui/icons/Menu";
-import ChevronLeftIcon from "@material-ui/icons/ChevronLeft";
 import AccountCircle from "@material-ui/icons/AccountCircle";
+import ChevronLeftIcon from "@material-ui/icons/ChevronLeft";
+import MenuIcon from "@material-ui/icons/Menu";
+import SyncBackdrop from "../components/SyncBackdrop";
 
-import MainListItems from "./MainListItems";
+import BackdropLoading from "../components/BackdropLoading";
 import NotificationsPopOver from "../components/NotificationsPopOver";
 import UserModal from "../components/UserModal";
 import { AuthContext } from "../context/Auth/AuthContext";
-import BackdropLoading from "../components/BackdropLoading";
+import { UsersPresenceContext } from "../context/UsersPresenceContext";
 import { i18n } from "../translate/i18n";
+import MainListItems from "./MainListItems";
 
 const drawerWidth = 240;
 
@@ -48,6 +51,9 @@ const useStyles = makeStyles((theme) => ({
   },
   appBar: {
     zIndex: theme.zIndex.drawer + 1,
+    // background: "#31FB48",
+    background: "#2de241",
+    color: "#fff",
     transition: theme.transitions.create(["width", "margin"], {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.leavingScreen,
@@ -68,7 +74,7 @@ const useStyles = makeStyles((theme) => ({
     display: "none",
   },
   title: {
-    flexGrow: 1,
+    // flexGrow: 1,
   },
   drawerPaper: {
     position: "relative",
@@ -117,13 +123,43 @@ const LoggedInLayout = ({ children }) => {
   const { handleLogout, loading } = useContext(AuthContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerVariant, setDrawerVariant] = useState("permanent");
+  const [syncBackdropIsOpen, setSyncBackdropIsOpen] = useState(false);
   const { user } = useContext(AuthContext);
+  const { setConnectedUsers } = useContext(UsersPresenceContext);
 
   useEffect(() => {
     if (document.body.offsetWidth > 600) {
       setDrawerOpen(true);
     }
+
+    const socket = openSocket();
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
+
+  useEffect(() => {
+    const socket = openSocket(user.id);
+
+    socket.on("usersPresenceList", (list) => {
+      setConnectedUsers(list);
+    });
+
+    socket.on("startSyncUnreadMessages", () => {
+      console.log("---- startSyncUnreadMessages");
+      setSyncBackdropIsOpen(true);
+    });
+
+    socket.on("endSyncUnreadMessages", () => {
+      console.log("---- endSyncUnreadMessages");
+      setSyncBackdropIsOpen(false);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user]);
 
   useEffect(() => {
     if (document.body.offsetWidth < 600) {
@@ -210,15 +246,30 @@ const LoggedInLayout = ({ children }) => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography
-            component="h1"
-            variant="h6"
-            color="inherit"
-            noWrap
-            className={classes.title}
+          <div
+            style={{
+              flexGrow: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
           >
-            WhaTicket
-          </Typography>
+            <Typography
+              component="h1"
+              variant="h6"
+              color="inherit"
+              noWrap
+              className={classes.title}
+            >
+              WhatRestaurant
+            </Typography>
+            <span>by</span>
+            <img
+              src="https://restaurant.pe/wp-content/uploads/2022/05/cropped-restaurantpelogo-300x59.png"
+              alt="logo"
+              style={{ width: "125px" }}
+            />
+          </div>
           {user.id && <NotificationsPopOver />}
 
           <div>
@@ -256,6 +307,7 @@ const LoggedInLayout = ({ children }) => {
           </div>
         </Toolbar>
       </AppBar>
+      <SyncBackdrop open={syncBackdropIsOpen} />
       <main className={classes.content}>
         <div className={classes.appBarSpacer} />
 
